@@ -1,70 +1,89 @@
 import streamlit as st
 import pdfplumber
-import re
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from PIL import Image
+import numpy as np
+
+# Streamlit configuration
+st.set_page_config(page_title="Policy Impact Analyzer", layout="wide")
 
 def extract_text_from_pdf(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
-        text = ""
-        for page in pdf.pages:
-            text += page.extract_text()
-    return text
+        return " ".join(page.extract_text() for page in pdf.pages)
 
-def extract_strategy_elements(text):
-    elements = {
-        'Goals': re.findall(r'(?:goal|objective)[:]\s*(.*?)(?:\n|$)', text, re.IGNORECASE),
-        'Priorities': re.findall(r'(?:priority|key focus area)[:]\s*(.*?)(?:\n|$)', text, re.IGNORECASE),
-        'Actions': re.findall(r'(?:action|initiative|measure)[:]\s*(.*?)(?:\n|$)', text, re.IGNORECASE),
-        'Principles': re.findall(r'(?:principle|core value)[:]\s*(.*?)(?:\n|$)', text, re.IGNORECASE),
-        'Approaches': re.findall(r'(?:approach|strategy|method)[:]\s*(.*?)(?:\n|$)', text, re.IGNORECASE)
-    }
-    return elements
+def compare_policy_to_document(policy_text, document_text):
+    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1,2), max_features=1000)
+    tfidf_matrix = vectorizer.fit_transform([policy_text, document_text])
+    similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
 
-def compare_policy_to_elements(policy_text, elements):
-    vectorizer = TfidfVectorizer()
-    all_elements = [item for sublist in elements.values() for item in sublist]
-    all_text = [policy_text] + all_elements
-    tfidf_matrix = vectorizer.fit_transform(all_text)
-    cosine_similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
-    return cosine_similarities
+    feature_names = vectorizer.get_feature_names_out()
+    policy_tfidf = tfidf_matrix[0].toarray()[0]
+    doc_tfidf = tfidf_matrix[1].toarray()[0]
 
-def generate_impact_report(policy_text, elements, similarities):
+    top_policy_terms = [feature_names[i] for i in policy_tfidf.argsort()[-20:][::-1]]
+    top_doc_terms = [feature_names[i] for i in doc_tfidf.argsort()[-20:][::-1]]
+
+    common_terms = set(top_policy_terms) & set(top_doc_terms)
+
+    return similarity, list(common_terms), top_policy_terms, top_doc_terms
+
+def generate_impact_description(similarity, common_terms):
+    if similarity > 0.3:
+        impact_level = "High Alignment"
+        description = "The proposed policy shows strong alignment with this strategy document."
+    elif similarity > 0.2:
+        impact_level = "Moderate Alignment"
+        description = "The proposed policy shows notable alignment with this strategy document."
+    elif similarity > 0.1:
+        impact_level = "Low Alignment"
+        description = "The proposed policy shows some alignment with this strategy document, but there are likely significant differences."
+    else:
+        impact_level = "Minimal Alignment"
+        description = "The proposed policy shows little alignment with this strategy document."
+
+    if common_terms:
+        description += f" Key areas of potential alignment include: {', '.join(common_terms)}."
+    else:
+        description += " No specific areas of alignment were identified."
+
+    description += " Consider how this alignment (or lack thereof) impacts the policy's effectiveness and comprehensiveness."
+
+    return impact_level, description
+
+def generate_impact_report(policy_text, document_similarities):
     report = "Policy Impact Analysis Report\n\n"
     report += f"Policy Text: {policy_text[:200]}...\n\n"
-
-    similarity_index = 0
-    for category, items in elements.items():
-        report += f"{category}:\n"
-        for item in items:
-            impact = "High" if similarities[similarity_index] > 0.5 else "Medium" if similarities[similarity_index] > 0.3 else "Low"
-            report += f"- {item}\n  Impact: {impact} (Similarity: {similarities[similarity_index]:.2f})\n"
-            similarity_index += 1
-        report += "\n"
-
+    report += "Impact on Strategy Documents:\n"
+    for doc, (similarity, common_terms, top_policy_terms, top_doc_terms) in document_similarities.items():
+        impact_level, impact_description = generate_impact_description(similarity, common_terms)
+        report += f"- {doc}:\n"
+        report += f"  Impact Level: {impact_level}\n"
+        report += f"  Similarity Score: {similarity:.2f}\n"
+        report += f"  Description: {impact_description}\n"
+        report += f"  Key Aligned Terms: {', '.join(common_terms)}\n"
+        report += f"  Top Policy Terms: {', '.join(top_policy_terms[:10])}\n"
+        report += f"  Top Document Terms: {', '.join(top_doc_terms[:10])}\n\n"
     return report
 
 def main():
     logo = Image.open("logo.png")
     st.image(logo, width=200)
 
-    st.title("DAFF Policy Impact Analyser")
+    st.title("Agriculture, Fisheries and Forestry Policy Impact Analyzer")
 
     st.write("""
-    Welcome to the DAFF Policy Impact Analyser!
+    Welcome to the Agriculture, Fisheries and Forestry Policy Impact Analyzer!
 
-    This app analyses the potential impact of a proposed policy on key elements 
-    (goals, priorities, actions, principles, and approaches) extracted from important 
-    strategy documents in the agriculture, fisheries, and forestry sectors.
+    This app analyzes the potential impact of a proposed policy on key strategy documents 
+    in the agriculture, fisheries, and forestry sectors.
 
     Here's how it works:
     1. Select the strategy documents you want to include in the analysis.
-    2. Click the 'Extract Strategy Elements' button to process the selected documents.
-    3. Enter your proposed policy text.
-    4. The app compares your policy to the extracted elements using natural language processing.
-    5. An impact report is generated, showing how your policy might affect each strategy element.
+    2. Enter your proposed policy text.
+    3. The app compares your policy to the entire content of each selected document using natural language processing.
+    4. An impact report is generated, showing how your policy might relate to each strategy document, including a detailed description of the potential impact and specific areas of alignment.
 
     Let's get started!
     """)
@@ -88,43 +107,44 @@ def main():
         st.warning("Please select at least one document for analysis.")
         return
 
-    if st.button("Extract Strategy Elements"):
-        with st.spinner("Extracting strategy elements from selected documents... This may take a moment."):
-            all_elements = {
-                'Goals': [], 'Priorities': [], 'Actions': [], 'Principles': [], 'Approaches': []
-            }
-            for pdf_file in selected_files:
-                if os.path.exists(pdf_file):
-                    text = extract_text_from_pdf(pdf_file)
-                    elements = extract_strategy_elements(text)
-                    for key in all_elements:
-                        all_elements[key].extend(elements[key])
+    st.subheader("Policy Analysis")
+    policy_text = st.text_area("Enter your proposed policy text here:")
+
+    if st.button("Analyze Policy"):
+        if policy_text and selected_files:
+            with st.spinner("Analyzing policy impact..."):
+                document_similarities = {}
+                for pdf_file in selected_files:
+                    if os.path.exists(pdf_file):
+                        document_text = extract_text_from_pdf(pdf_file)
+                        similarity, common_terms, top_policy_terms, top_doc_terms = compare_policy_to_document(policy_text, document_text)
+                        document_similarities[pdf_file] = (similarity, common_terms, top_policy_terms, top_doc_terms)
+                    else:
+                        st.warning(f"File not found: {pdf_file}")
+
+                if document_similarities:
+                    report = generate_impact_report(policy_text, document_similarities)
+                    st.text_area("Impact Report", report, height=400)
+
+                    # Visualization of impact
+                    st.subheader("Impact Visualization")
+                    for doc, (similarity, common_terms, top_policy_terms, top_doc_terms) in document_similarities.items():
+                        st.write(f"{doc}:")
+                        st.progress(similarity)
+                        impact_level, _ = generate_impact_description(similarity, common_terms)
+                        st.write(f"Impact Level: {impact_level}")
+                        st.write(f"Key Aligned Terms: {', '.join(common_terms)}")
+                        st.write(f"Top Policy Terms: {', '.join(top_policy_terms[:10])}")
+                        st.write(f"Top Document Terms: {', '.join(top_doc_terms[:10])}")
+                        st.write("---")
                 else:
-                    st.warning(f"File not found: {pdf_file}")
-
-        total_elements = sum(len(v) for v in all_elements.values())
-        if total_elements > 0:
-            st.success(f"Successfully processed {len(selected_files)} document(s) and extracted {total_elements} strategy elements.")
-
-            st.session_state.all_elements = all_elements
-
-            st.subheader("Policy Analysis")
-            policy_text = st.text_area("Enter your proposed policy text here:")
-
-            if st.button("Analyze Policy"):
-                if policy_text and st.session_state.all_elements:
-                    with st.spinner("Analyzing policy..."):
-                        similarities = compare_policy_to_elements(policy_text, st.session_state.all_elements)
-                        report = generate_impact_report(policy_text, st.session_state.all_elements, similarities)
-                        st.text_area("Impact Report", report, height=400)
-                else:
-                    st.warning("Please enter policy text to analyze.")
+                    st.error("No documents could be processed. Please check the selected files and try again.")
         else:
-            st.error("No strategy elements were extracted from the selected documents. Please try selecting different documents or refine the extraction method.")
+            st.warning("Please enter policy text and select at least one document to analyze.")
 
     st.write("""
     Note: This analysis uses natural language processing to compare your policy text with 
-    strategy elements extracted from the selected documents. The results should be interpreted 
+    the content of the selected strategy documents. The results should be interpreted 
     as potential impacts and used as a starting point for further, more detailed analysis by domain experts.
     """)
 
