@@ -13,6 +13,8 @@ pandas = "^2.2.2"
 plotly = "^5.23.0"
 requests = "^2.32.3"
 numpy = "^2.0.1"
+scikit-learn = "^1.5.1"
+pdfplumber = "^0.11.4"
 
 [tool.pyright]
 # https://github.com/microsoft/pyright/blob/main/docs/configuration.md
