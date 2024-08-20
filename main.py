@@ -9,6 +9,46 @@ import numpy as np
 # Streamlit configuration
 st.set_page_config(page_title="Policy Impact Analyzer", layout="wide")
 
+# Sample policy text
+SAMPLE_POLICY = """
+Proposed Policy: Sustainable Agricultural Development and Digital Innovation Initiative
+
+Our policy aims to modernize and sustain Australia's agricultural sector through the following key initiatives:
+
+1. Digital Transformation in Agriculture:
+   - Implement a nationwide program to provide high-speed internet access to all rural and remote farming communities.
+   - Develop and promote the use of AI-driven farm management systems to optimize crop yields and resource usage.
+   - Establish a national agricultural data platform to facilitate information sharing and decision-making among farmers, researchers, and policymakers.
+
+2. Biosecurity Measures:
+   - Enhance border control measures to prevent the introduction of invasive species and diseases.
+   - Allocate funds for research into new detection technologies for potential biosecurity threats.
+   - Conduct regular biosecurity awareness campaigns for farmers and the general public.
+
+3. Sustainable Farming Practices:
+   - Introduce incentives for farmers adopting regenerative agriculture techniques.
+   - Promote crop diversification and rotation to improve soil health and reduce pest pressures.
+   - Encourage the use of precision agriculture technologies to minimize water usage and chemical inputs.
+
+4. Climate Resilience in Agriculture:
+   - Develop climate-resistant crop varieties through increased funding for agricultural research.
+   - Implement a carbon credit system for farmers who adopt practices that sequester carbon in soil.
+   - Establish regional climate adaptation plans for different agricultural zones across Australia.
+
+5. Pacific Region Collaboration:
+   - Share agricultural best practices and technologies with Pacific Island nations to enhance their food security.
+   - Collaborate on regional biosecurity initiatives to protect shared ecosystems.
+   - Provide training and resources to Pacific farmers on sustainable and climate-smart agriculture techniques.
+
+6. Biodiversity and Wildlife Conservation:
+   - Create wildlife corridors in agricultural landscapes to support native species movement.
+   - Implement a grant program for farmers who protect and restore native habitats on their properties.
+   - Develop guidelines for wildlife-friendly farming practices, particularly in areas adjacent to protected habitats.
+
+This policy seeks to balance technological advancement, environmental sustainability, and regional cooperation to ensure a resilient and productive agricultural sector for Australia's future.
+"""
+
+# Existing functions remain the same
 def extract_text_from_pdf(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         return " ".join(page.extract_text() for page in pdf.pages)
@@ -108,7 +148,12 @@ def main():
         return
 
     st.subheader("Policy Analysis")
-    policy_text = st.text_area("Enter your proposed policy text here:")
+    st.write("You can use our sample policy or enter your own:")
+
+    if st.button("Use Sample Policy"):
+        st.session_state.policy_text = SAMPLE_POLICY
+
+    policy_text = st.text_area("Enter your proposed policy text here:", value=st.session_state.get('policy_text', ''), height=300)
 
     if st.button("Analyze Policy"):
         if policy_text and selected_files:
